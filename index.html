@@ -2268,10 +2268,18 @@ async function renderTeam() {
         <h3 style="margin-bottom:8px">${t('team_no_team')}</h3>
         <p style="color:var(--t2);margin-bottom:24px">${lang==='fr'?'Rejoignez ou creez une equipe pour collaborer':'Join or create a team to collaborate'}</p>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <div style="background:var(--bg);border-radius:var(--radius);padding:20px;width:280px">
-            <h4 style="margin-bottom:10px">${t('team_join')}</h4>
+          <div style="background:var(--bg);border-radius:var(--radius);padding:20px;width:280px;border:1px solid rgba(0,201,167,.15)">
+            <h4 style="margin-bottom:10px">📥 ${t('team_join')}</h4>
+            <p style="font-size:12px;color:var(--t3);margin-bottom:10px">${lang==='fr'?'Entrez le code équipe donné par votre manager':'Enter the team code from your manager'}</p>
             <input type="text" id="join-code-input" placeholder="${t('team_code_label')}" style="width:100%;padding:10px 14px;background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:8px;font-size:14px;margin-bottom:10px;color:var(--t1)">
             <button class="btn btn-primary" style="width:100%" onclick="joinTeam()">${t('team_join_btn')}</button>
+          </div>
+          <div style="background:var(--bg);border-radius:var(--radius);padding:20px;width:280px;border:1px solid rgba(167,139,250,.15)">
+            <h4 style="margin-bottom:10px">🏢 ${t('team_create')}</h4>
+            <p style="font-size:12px;color:var(--t3);margin-bottom:10px">${lang==='fr'?'Code d\'activation requis (fourni par Deal TOP)':'Activation code required (provided by Deal TOP)'}</p>
+            <input type="text" id="activation-code-input" placeholder="${lang==='fr'?'Code d\'activation':'Activation code'}" style="width:100%;padding:10px 14px;background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:8px;font-size:14px;margin-bottom:10px;color:var(--t1);text-transform:uppercase">
+            <button class="btn" style="width:100%;background:linear-gradient(90deg,#A78BFA,#8B5CF6);color:#fff;border:none;padding:10px;border-radius:8px;font-weight:700;cursor:pointer" onclick="createTeamWeb()">${t('team_create')}</button>
+            <p style="font-size:11px;color:var(--t3);margin-top:8px;text-align:center">${lang==='fr'?'Contactez Deal TOP pour obtenir un code':'Contact Deal TOP to get a code'}</p>
           </div>
         </div>
       </div>
@@ -2369,6 +2377,29 @@ async function renderTeam() {
   } catch (e) {
     container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:40px">${t('error_generic')}</p>`;
   }
+}
+
+async function createTeamWeb() {
+  const code = document.getElementById('activation-code-input')?.value?.trim().toUpperCase();
+  if (!code) { showToast(lang==='fr'?'Entrez le code d\'activation':'Enter activation code','error'); return; }
+  try {
+    // Verify activation code
+    const codes = await sbGet('activation_codes', `code=eq.${code}&status=eq.active`);
+    if (!codes || codes.length === 0) {
+      showToast(lang==='fr'?'Code d\'activation invalide ou déjà utilisé. Contactez Deal TOP.':'Invalid or already used activation code. Contact Deal TOP.','error');
+      return;
+    }
+    // Mark code as used
+    await sbPatch('activation_codes', codes[0].id, { status:'used', used_by:currentUser.id, used_at:new Date().toISOString() });
+    // Generate team code
+    const teamCode = Array.from({length:10},()=>'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random()*36)]).join('');
+    // Update profile as manager
+    await sbPatch('profiles', currentUser.id, { team_code:teamCode, team_role:'manager', subscription_status:'premium', admin_grant_days:9999, admin_grant_date:new Date().toISOString() });
+    profile.team_code = teamCode;
+    profile.team_role = 'manager';
+    renderTeam();
+    showToast(lang==='fr'?'Équipe créée ! Code: '+teamCode:'Team created! Code: '+teamCode);
+  } catch (e) { showToast(t('error_generic'),'error'); }
 }
 
 async function joinTeam() {
