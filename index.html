@@ -2234,37 +2234,52 @@ async function aiAnalyzePerformance() {
 // ═══════════════════════════════════════════════════════════════
 function buildAIQuickActions() {
   const actions = [
-    { key:'ai_btn_assistant', action:'assistant', icon:'💼' },
-    { key:'ai_btn_email', action:'write_email', icon:'✉️' },
-    { key:'ai_btn_sms', action:'write_sms', icon:'💬' },
+    { key:'ai_btn_assistant', action:'sales_assistant', icon:'💼' },
+    { key:'ai_btn_email', action:'draft_message', icon:'✉️', extra:{type:'email'} },
+    { key:'ai_btn_sms', action:'draft_message', icon:'💬', extra:{type:'sms'} },
     { key:'ai_btn_predict', action:'predict_closing', icon:'🔮' },
     { key:'ai_btn_coach', action:'coaching', icon:'🏋️' },
     { key:'ai_btn_suggest', action:'suggest_action', icon:'💡' },
     { key:'ai_btn_qualify', action:'qualify_lead', icon:'🎯' },
   ];
   document.getElementById('ai-quick-actions').innerHTML = actions.map(a =>
-    `<button class="ai-quick-btn" onclick="sendAIAction('${a.action}')">${a.icon} ${t(a.key)}</button>`
+    `<button class="ai-quick-btn" onclick="sendAIAction('${a.action}'${a.extra?','+JSON.stringify(a.extra).replace(/"/g,"'"):''})"> ${a.icon} ${t(a.key)}</button>`
   ).join('');
 }
 
-async function sendAIAction(action) {
+async function sendAIAction(action, extra) {
   const msgs = document.getElementById('chat-messages');
   const label = action.replace(/_/g,' ');
   msgs.innerHTML += `<div class="chat-msg user"><div class="msg-avatar">${getInitials(profile?.full_name||'U')}</div><div class="msg-bubble">${escHtml(label)}</div></div>`;
   msgs.innerHTML += `<div class="chat-msg ai" id="ai-typing"><div class="msg-avatar">🤖</div><div class="msg-bubble"><span class="loading-spinner"></span></div></div>`;
   msgs.scrollTop = msgs.scrollHeight;
+  const topContact = contacts[0] || {};
+  const recentHistory = history.slice(0,5).map(h => h.title).join(', ');
+  const totalDeals = contacts.filter(c => ['Signé','Gagné','Livré','Acte signé','Compromis','Souscription','Client','Fidélisé'].includes(c.stage)).length;
+  const totalCA = contacts.reduce((s,c) => s + (c.value||0), 0);
+  const convRate = contacts.length > 0 ? Math.round(totalDeals/contacts.length*100) : 0;
+  let aiData = {};
+  switch(action) {
+    case 'sales_assistant': aiData = { situation: lang==='fr'?'Conseil general de vente':'General sales advice', contactName: topContact.name||'Prospect', stage: topContact.stage||'Prospect', commercialType: profile?.commercial_type||'other' }; break;
+    case 'draft_message': aiData = { type: extra?.type||'email', contactName: topContact.name||'Client', contactEmail: topContact.email||'', stage: topContact.stage||'Prospect', history: recentHistory, commercialType: profile?.commercial_type||'other', senderName: profile?.full_name||'', senderPhone: profile?.phone||'' }; break;
+    case 'predict_closing': aiData = { contactName: topContact.name||'Prospect', stage: topContact.stage||'Prospect', interactions: history.filter(h=>h.contact_id===topContact.id).length, daysSinceCreation: topContact.created_at?Math.round((Date.now()-new Date(topContact.created_at).getTime())/(1000*60*60*24)):0, value: topContact.value||0, heat: topContact.heat||'warm' }; break;
+    case 'coaching': aiData = { situation: lang==='fr'?'Analyse de mes performances commerciales':'Analysis of my sales performance', outcome: lang==='fr'?totalDeals+' deals signes, '+convRate+'% conversion':''+totalDeals+' deals signed, '+convRate+'% conversion', commercialType: profile?.commercial_type||'other' }; break;
+    case 'suggest_action': aiData = { contactName: topContact.name||'Prospect', stage: topContact.stage||'Prospect', lastContact: topContact.last_contact||'', heat: topContact.heat||'warm', history: recentHistory }; break;
+    case 'qualify_lead': aiData = { contactName: topContact.name||'Prospect', company: topContact.company||'', source: topContact.source||'', notes: topContact.memo||'', value: topContact.value||0 }; break;
+    case 'analyze_performance': aiData = { totalContacts: contacts.length, dealsSigned: totalDeals, conversionRate: convRate, avgDealValue: totalDeals>0?Math.round(totalCA/totalDeals):0, topStage: 'Prospect' }; break;
+  }
   try {
     const r = await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
-      method:'POST', headers:{ 'Authorization':'Bearer '+accessToken, 'Content-Type':'application/json' },
-      body: JSON.stringify({ action, lang, data: { contacts: contacts.slice(0,20).map(c=>({name:c.name,stage:c.stage,value:c.value,heat:c.heat})), profile: { full_name: profile?.full_name, commercial_type: profile?.commercial_type } } })
+      method:'POST', headers:{ 'Authorization':'Bearer '+SUPABASE_KEY, 'apikey':SUPABASE_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify({ action, lang, data: aiData })
     });
     const data = await r.json();
     document.getElementById('ai-typing')?.remove();
-    const reply = data.reply || data.message || data.response || (lang==='fr'?'Pas de reponse.':'No response.');
-    msgs.innerHTML += `<div class="chat-msg ai"><div class="msg-avatar">🤖</div><div class="msg-bubble">${escHtml(reply)}</div></div>`;
+    const reply = data.result || (lang==='fr'?'Pas de reponse.':'No response.');
+    msgs.innerHTML += `<div class="chat-msg ai"><div class="msg-avatar">🤖</div><div class="msg-bubble" style="white-space:pre-wrap">${escHtml(reply)}</div></div>`;
   } catch (e) {
     document.getElementById('ai-typing')?.remove();
-    msgs.innerHTML += `<div class="chat-msg ai"><div class="msg-avatar">🤖</div><div class="msg-bubble" style="color:var(--danger)">${t('error_generic')}</div></div>`;
+    msgs.innerHTML += `<div class="chat-msg ai"><div class="msg-avatar">🤖</div><div class="msg-bubble" style="color:var(--danger)">${lang==='fr'?'Erreur de connexion. Reessayez.':'Connection error. Try again.'}</div></div>`;
   }
   msgs.scrollTop = msgs.scrollHeight;
 }
@@ -2280,13 +2295,13 @@ async function sendChat() {
   msgs.scrollTop = msgs.scrollHeight;
   try {
     const r = await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
-      method:'POST', headers:{ 'Authorization':'Bearer '+accessToken, 'Content-Type':'application/json' },
-      body: JSON.stringify({ message:msg, lang, contacts:contacts.slice(0,20).map(c=>({name:c.name,stage:c.stage,value:c.value,heat:c.heat})), profile:{ full_name:profile?.full_name, commercial_type:profile?.commercial_type } })
+      method:'POST', headers:{ 'Authorization':'Bearer '+SUPABASE_KEY, 'apikey':SUPABASE_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'sales_assistant', lang, data:{ situation:msg, contactName:contacts[0]?.name||'Prospect', stage:contacts[0]?.stage||'Prospect', commercialType:profile?.commercial_type||'other' } })
     });
     const data = await r.json();
     document.getElementById('ai-typing')?.remove();
-    const reply = data.reply || data.message || data.response || (lang==='fr'?'Pas de reponse.':'No response.');
-    msgs.innerHTML += `<div class="chat-msg ai"><div class="msg-avatar">🤖</div><div class="msg-bubble">${escHtml(reply)}</div></div>`;
+    const reply = data.result || (lang==='fr'?'Pas de reponse.':'No response.');
+    msgs.innerHTML += `<div class="chat-msg ai"><div class="msg-avatar">🤖</div><div class="msg-bubble" style="white-space:pre-wrap">${escHtml(reply)}</div></div>`;
   } catch (e) {
     document.getElementById('ai-typing')?.remove();
     msgs.innerHTML += `<div class="chat-msg ai"><div class="msg-avatar">🤖</div><div class="msg-bubble" style="color:var(--danger)">${t('error_generic')}</div></div>`;
