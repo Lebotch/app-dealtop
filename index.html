@@ -2191,7 +2191,7 @@ async function aiAnalyzePerformance() {
   try {
     const r = await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'analyze_performance', lang,
         data: {
@@ -2557,7 +2557,7 @@ async function sendSupportMsg() {
   try {
     var resp = await fetch(SUPABASE_URL + '/functions/v1/ai-assistant', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('dt_token') },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY, 'apikey': SUPABASE_KEY },
       body: JSON.stringify({ action: 'support_chat', data: { message: msg }, lang: LANG })
     });
     var data = await resp.json();
