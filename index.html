@@ -1554,7 +1554,7 @@ function renderDashboard() {
   const icons = { note:'📝', call:'📞', email:'✉️', meeting:'📅', stage_change:'🔄', rdv:'📅', sms:'💬', document:'📎', voice_note:'🎤' };
   document.getElementById('activity-list').innerHTML = recent.length === 0
     ? `<p style="color:var(--t3);font-size:13px;padding:10px 0">${t('no_history')}</p>`
-    : recent.map(h => `<div class="activity-item"><span class="ai-icon">${icons[h.type]||'📌'}</span><span class="ai-text"><strong>${escHtml(h.title||'')}</strong> ${h.detail?'— '+escHtml(h.detail):''}</span><span class="ai-time">${timeAgo(h.date)}</span></div>`).join('');
+    : recent.map(h => { const isUrl = h.detail && (h.detail.startsWith('http://') || h.detail.startsWith('https://')); const detailShow = h.detail && !isUrl && h.type !== 'voice_note' && h.type !== 'document' ? ' — ' + escHtml(h.detail) : ''; return `<div class="activity-item"><span class="ai-icon">${icons[h.type]||'📌'}</span><span class="ai-text"><strong>${escHtml(h.title||'')}</strong>${detailShow}</span><span class="ai-time">${timeAgo(h.date)}</span></div>`; }).join('');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1770,13 +1770,17 @@ function openContact(id) {
     ? `<p style="color:var(--t3);font-size:13px">${t('no_history')}</p>`
     : contactHistory.slice(0,20).map(h => {
       let extra = '';
-      if (h.type === 'voice_note' && h.audio_url) {
-        extra = `<div class="voice-note"><audio controls preload="none"><source src="${h.audio_url}" type="audio/mp4"></audio></div>`;
+      const isUrl = (s) => s && (s.startsWith('http://') || s.startsWith('https://'));
+      if (h.type === 'voice_note') {
+        const audioSrc = h.audio_url || h.detail || '';
+        if (audioSrc) extra = `<div class="voice-note"><audio controls preload="none" style="width:100%;height:32px"><source src="${audioSrc}" type="audio/m4a"><source src="${audioSrc}" type="audio/mp4"></audio></div>`;
       }
       if (h.type === 'document' && h.detail) {
-        extra = `<a href="${h.detail}" target="_blank" style="font-size:12px;display:block;margin-top:4px">📎 ${lang==='fr'?'Voir le document':'View document'}</a>`;
+        const docName = h.title || (lang==='fr'?'Document':'Document');
+        extra = `<a href="${h.detail}" target="_blank" style="font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-top:4px;color:var(--g1);text-decoration:none">📎 ${lang==='fr'?'Télécharger':'Download'}</a>`;
       }
-      return `<div class="activity-item"><span class="ai-icon">${icons[h.type]||'📌'}</span><span class="ai-text"><strong>${escHtml(h.title||'')}</strong> ${h.detail && h.type !== 'document'?'— '+escHtml(h.detail):''} ${extra}</span><span class="ai-time">${fmtDate(h.date)}</span></div>`;
+      const detailText = (h.detail && !isUrl(h.detail) && h.type !== 'voice_note' && h.type !== 'document') ? ' — ' + escHtml(h.detail) : '';
+      return `<div class="activity-item"><span class="ai-icon">${icons[h.type]||'📌'}</span><span class="ai-text"><strong>${escHtml(h.title||'')}</strong>${detailText}${extra}</span><span class="ai-time">${fmtDate(h.date)}</span></div>`;
     }).join('');
   document.getElementById('tab-history').classList.remove('active');
 
