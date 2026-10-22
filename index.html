@@ -6,7 +6,7 @@
 <title>Deal TOP - CRM Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Syne:wght@400..800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
@@ -1971,7 +1971,7 @@ function fmtDateShort(d) {
   return new Date(d).toLocaleDateString(lang==='fr'?'fr-FR':'en-US', { day:'numeric', month:'short' });
 }
 function daysBetween(d1, d2) { return Math.floor((new Date(d2) - new Date(d1)) / 86400000); }
-function escHtml(s) { if (s == null) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
+function escHtml(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\n/g,'<br>'); }
 
 const GRADIENTS = [
   ['#00C9A7','#0EA5C4'],['#A78BFA','#0EA5C4'],['#FF5B7A','#FFB347'],
@@ -3511,38 +3511,50 @@ async function renderTeam() {
   }
 }
 
+// Equipes : code d'activation et code d'equipe verifies par le serveur, comme dans l'app.
+// Le profil ne se modifie plus directement (n'importe qui pouvait se donner le premium).
+async function teamRpc(fn, args) {
+  const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, { method: 'POST', headers: sbHeaders(), body: JSON.stringify(args) });
+  return r.json();
+}
+async function reloadProfile() {
+  try { const p = await sbGet('profiles', 'id=eq.' + currentUser.id); profile = p[0] || profile; } catch (e) {}
+}
+
 async function createTeamWeb() {
   const code = document.getElementById('activation-code-input')?.value?.trim().toUpperCase();
-  if (!code) { showToast(lang==='fr'?'Entrez le code d\'activation':'Enter activation code','error'); return; }
+  const fr = lang === 'fr';
+  if (!code) { showToast(fr?'Entrez le code d\'activation':'Enter activation code','error'); return; }
   try {
-    // Verify activation code
-    const codes = await sbGet('activation_codes', `code=eq.${code}&status=eq.active`);
-    if (!codes || codes.length === 0) {
-      showToast(lang==='fr'?'Code d\'activation invalide ou déjà utilisé. Contactez Deal TOP.':'Invalid or already used activation code. Contact Deal TOP.','error');
+    const teamCode = Array.from({length:10},()=>'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random()*36)]).join('');
+    const data = await teamRpc('redeem_activation_code', { p_code: code, p_team_code: teamCode });
+    if (!data || !data.ok) {
+      showToast(data && data.error === 'already_in_team'
+        ? (fr ? 'Vous êtes déjà dans une équipe.' : 'You are already in a team.')
+        : (fr ? 'Code d\'activation invalide ou déjà utilisé. Contactez Deal TOP.' : 'Invalid or already used activation code. Contact Deal TOP.'), 'error');
       return;
     }
-    // Mark code as used
-    await sbPatch('activation_codes', codes[0].id, { status:'used', used_by:currentUser.id, used_at:new Date().toISOString() });
-    // Generate team code
-    const teamCode = Array.from({length:10},()=>'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random()*36)]).join('');
-    // Update profile as manager
-    await sbPatch('profiles', currentUser.id, { team_code:teamCode, team_role:'manager', subscription_status:'premium', admin_grant_days:9999, admin_grant_date:new Date().toISOString() });
-    profile.team_code = teamCode;
-    profile.team_role = 'manager';
+    await reloadProfile();
     renderTeam();
-    showToast(lang==='fr'?'Équipe créée ! Code: '+teamCode:'Team created! Code: '+teamCode);
+    showToast(fr?'Équipe créée ! Code: '+data.team_code:'Team created! Code: '+data.team_code);
   } catch (e) { showToast(t('error_generic'),'error'); }
 }
 
 async function joinTeam() {
   const code = document.getElementById('join-code-input')?.value?.trim();
+  const fr = lang === 'fr';
   if (!code) return;
   try {
-    await sbPatch('profiles', currentUser.id, { team_code: code, team_role: 'member' });
-    profile.team_code = code;
-    profile.team_role = 'member';
+    const data = await teamRpc('join_team', { p_code: code });
+    if (!data || !data.ok) {
+      showToast(data && data.error === 'already_in_team'
+        ? (fr ? 'Vous êtes déjà dans une équipe.' : 'You are already in a team.')
+        : (fr ? 'Code équipe introuvable.' : 'Team code not found.'), 'error');
+      return;
+    }
+    await reloadProfile();
     renderTeam();
-    showToast(lang==='fr'?'Équipe rejointe !':'Team joined!');
+    showToast(fr?'Équipe rejointe !':'Team joined!');
   } catch (e) { showToast(t('error_generic'), 'error'); }
 }
 
